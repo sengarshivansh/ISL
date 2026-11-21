@@ -1,0 +1,13 @@
+torch>=2.4
+transformers>=4.45
+sentencepiece
+sacrebleu>=2.4
+rouge-score
+numpy
+pandas
+pyyaml
+fastapi
+uvicorn[standard]
+mediapipe==1.2.0
+opencv-python
+pytest

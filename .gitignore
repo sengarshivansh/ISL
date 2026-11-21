@@ -11,3 +11,6 @@ main_paper/
 papers_web/
 papers_extra/
 notes/
+runs/
+checkpoints/
+*.pt
