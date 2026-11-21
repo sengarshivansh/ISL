@@ -1,0 +1,239 @@
+% FaST-ISL paper draft (ACL format). Build: cd paper && tectonic main.tex
+% Everything marked \todo{} needs the real iSign experiments (ROADMAP.md, step 10).
+\documentclass[11pt]{article}
+\usepackage[review]{acl}
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+\newcommand{\fast}{FaST-ISL}
+
+\title{\fast: Face-aware, Speed-robust, Streaming Translation of\\Continuous Indian Sign Language}
+
+\author{Anonymous submission}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Indian Sign Language (ISL) marks questions, negation and emphasis with the face and head, yet every
+recent continuous ISL-to-English translation system we survey (including all ISL systems at WSLP 2026)
+uses body and hand keypoints only. These systems are also trained and tested at one natural signing
+speed, and they translate pre-cut clips rather than live, unsegmented signing. We present \fast{}, a
+pose-to-text translator that adds (i)~a gated face and head-pose stream, (ii)~speed robustness via a
+multi-rate temporal encoder and 0.5--2$\times$ temporal resampling, and (iii)~a pause-driven streaming
+segmenter that turns continuous signing into sentence-level English text and speech in real time. On
+the iSign benchmark, \fast{} improves BLEU-4 from \todo{x} to \todo{y} (\todo{+z\%} relative) over a
+body+hands baseline with the same decoder, keeps \todo{p\%} of its accuracy when signing is twice as
+fast (baseline: \todo{q\%}), and raises question-form accuracy from \todo{a} to \todo{b}. A region
+ablation shows that \todo{region} carries most of the benefit. The full system runs at \todo{fps} on
+a laptop CPU with \todo{ms}~ms model latency per sentence. Code, configs and the demo are released.
+\end{abstract}
+
+\section{Introduction}
+
+A person signing to a camera does not stop between sentences, does not sign at a fixed speed, and
+does not express everything with the hands. Sign languages use \emph{non-manual markers}---eyebrow
+raises, head shakes, mouth shapes---as grammar: in ISL, raised eyebrows typically mark a yes/no question
+and a head shake marks negation \citep{joshi2024isign}. A translator that discards the face cannot, in
+principle, distinguish \emph{``You are going home.''} from \emph{``Are you going home?''} when the hands
+are identical.
+
+The release of iSign \citep{joshi2024isign}, with more than 118k ISL video--English sentence pairs, and
+the WSLP shared tasks \citep{wslp2026findings} made continuous ISL-to-English translation a benchmarked
+task. Quality is still low: the best reported iSign BLEU-4 is below 10 \citep{roychowdhury2025motion},
+and the 2026 shared-task overview notes that official BLEU can sit at zero.
+
+We reviewed the recent ISL recognition and translation literature, including all 24 papers of the WSLP
+2026 proceedings, and find three gaps (\S\ref{sec:related}):
+\begin{enumerate}
+\item \textbf{The face is missing.} Pose-based ISL translators keep 33 body and 42 hand points and drop
+  the face \citep{dhamecha2026temporal, ahmed2026islim, shrestha2026contrastive, geetha2025signflow}.
+  Face-aware translation has helped Chinese and German sign language \citep{tu2026feaslt} but has not
+  been tested on ISL.
+\item \textbf{Speed is fixed.} No ISL translation work measures robustness to faster signing, although
+  signing rate varies across signers and situations.
+\item \textbf{No streaming.} ISL systems translate pre-segmented clips; real-time systems are
+  closed-domain and output glosses \citep{geetha2025signflow} or take seconds per response
+  \citep{nedungadi2025islca}.
+\end{enumerate}
+
+\paragraph{Contributions.}
+\begin{itemize}
+\item \fast{}, a pose-to-English translator with a \emph{gated} face/head stream that can open only when
+  the face carries meaning, and an ablation of which facial region (mouth, eyes, eyebrows, head pose)
+  matters for ISL translation.
+\item A speed-robust encoder (multi-rate temporal convolution plus 0.5--2$\times$ resampling) and a
+  \emph{speed-perturbed} iSign test protocol (1.5$\times$, 2$\times$).
+\item A non-manual evaluation: question- and negation-form accuracy on iSign, alongside BLEU, chrF and
+  ROUGE-L.
+\item A streaming system: a motion-energy pause segmenter, a stream-level evaluation on reassembled
+  iSign videos, and an open-source web demo producing English text and speech.
+\end{itemize}
+
+\section{Related Work}\label{sec:related}
+
+\paragraph{ISL translation.} iSign \citep{joshi2024isign} provides MediaPipe Holistic poses and
+English sentences; its baselines reach BLEU-4 around 1.5. PoseStitch-SLT \citep{posestitch2025} and
+motion-aware modelling \citep{roychowdhury2025motion} raise this to 3.4 and 8.6. At WSLP 2026,
+\citet{dhamecha2026temporal} feed body and hand keypoints with frame differences into T5;
+ISLiM \citep{ahmed2026islim} is a compact end-to-end model (iSign BLEU-4 5.85);
+\citet{shrestha2026contrastive} add contrastive grounding; \citet{elaswad2026articulator} transfer ASL
+models to ISL. None of these uses face features, varies signing speed, or translates a live stream.
+
+\paragraph{Real-time ISL systems.} SignFlow \citep{geetha2025signflow} recognises continuous ISL in a
+fixed e-governance vocabulary from RGB, pose and hand input and outputs glosses. ISL-CA
+\citep{nedungadi2025islca} is a closed-domain chatbot with 6.5\,s mean response time.
+\citet{srivastava2024continuous} classify a small set of phrases from Holistic landmarks including the
+face, but do not translate open sentences.
+
+\paragraph{Non-manual features.} \citet{pham2025facial} find the mouth to be the most informative facial
+region for recognition and report that few prior works used the face. FEA-SLT \citep{tu2026feaslt}
+adds facial expressions to gloss-free translation on PHOENIX14T and CSL-Daily. A review of low-resource
+sign language processing lists the neglect of non-manual features among its core challenges
+\citep{lowresource2026review}. Our work brings this question to ISL translation from pose and asks
+which region helps.
+
+\paragraph{Speed perturbation.} Changing playback speed is a standard augmentation in speech recognition
+\citep{ko2015audio}. We apply it to sign keypoints and, unlike prior work, also use it to build
+fast-signing \emph{test} sets.
+
+\section{Method}
+
+\subsection{Input features}
+Each frame holds MediaPipe Holistic \citep{lugaresi2019mediapipe} keypoints: 33 body points, 21 points
+per hand, and a 152-point face subset (lips 40, eyes 32, eyebrows 20, face outline 36, nose 24) chosen
+from the 468-point mesh. We build five streams per frame $t$:
+\begin{itemize}
+\item \textbf{body}: 25 upper-body points, centred on the shoulder midpoint and divided by shoulder width;
+\item \textbf{hands}: each hand in body coordinates and relative to its own wrist (scaled by palm size);
+\item \textbf{face}: face points relative to the face centre, divided by the outer-eye distance, so the
+  stream encodes expression independently of head position;
+\item \textbf{head}: six head-pose proxies: face centre and scale relative to the shoulders, roll (eye
+  line angle), and yaw/pitch proxies (nose offset from the face centre);
+\item \textbf{present}: four flags marking whether body, each hand and face were detected.
+\end{itemize}
+Undetected parts are zero and their normaliser is carried over from the last valid frame. Each stream
+$x$ is fed as $[x_t, x_t - x_{t-1}]$ so motion is explicit.
+
+\subsection{Gated face fusion}
+Manual and non-manual inputs are projected separately (LayerNorm--Linear--GELU--Linear):
+$m_t = P_b(\text{body}_t) + P_h(\text{hands}_t) + W_p\,\text{present}_t$ and
+$f_t = P_f(\text{face}_t) + P_{hp}(\text{head}_t)$. Head pose has its own projection: its six numbers
+would otherwise be swamped by the 304 face coordinates. A per-channel gate decides how much face
+information enters:
+\begin{equation}
+  g_t = \sigma\!\left(W_g [m_t; f_t] + b_g\right), \qquad h_t = m_t + g_t \odot f_t .
+\end{equation}
+$b_g$ is initialised to $-1$ so the gate starts mostly closed and opens only where the face helps. The
+ablation \emph{concat} replaces the gate by $h_t = W[m_t; f_t]$; the \emph{baseline} uses $h_t = m_t$.
+
+\subsection{Speed-robust temporal encoder}
+A multi-rate block applies three depthwise temporal convolutions (kernel 5, dilations 1, 2, 4) in
+parallel, mixes them with a $1{\times}1$ convolution and a residual connection, and halves the frame
+rate with a stride-2 convolution. The same movement is thus seen at three time scales, so a sign made
+twice as fast still matches a learned pattern. Four pre-norm Transformer layers ($d{=}256$, 4 heads)
+follow. During training each clip is, with probability 0.5, resampled to a speed factor drawn
+log-uniformly from $[0.5, 2]$ by linear interpolation between frames.
+
+\subsection{Decoder}
+A linear bridge maps encoder states to the input embedding space of a pretrained T5-small
+\citep{raffel2020t5}, whose encoder and decoder are fine-tuned end to end, following
+\citet{dhamecha2026temporal}. We decode with beam size 4.
+
+\subsection{Streaming segmentation}
+For live use, a segmenter receives keypoints at 10\,fps. It tracks the hands' motion energy
+$e_t = \max_{\text{hand}} \lVert \bar{p}_t - \bar{p}_{t-1} \rVert / w_t$ (mean hand position, shoulder
+width $w_t$), smoothed by an exponential moving average. A sentence starts when a hand is in the
+signing space and $e_t$ exceeds $\tau_{on}$, and ends after 0.6\,s with $e_t < \tau_{off}$ (hysteresis)
+or with the hands lowered. Sentences longer than 12\,s are cut at the calmest recent frame to bound
+latency. Each finished segment is translated at once and spoken with text-to-speech.
+
+\section{Experimental Setup}
+
+\paragraph{Data.} iSign v1.1 \citep{joshi2024isign}: \todo{N} clips with poses after filtering. iSign
+clip identifiers have the form \texttt{<video>-<n>}; we hash the source video to assign 90/5/5\% of
+\emph{videos} to train/validation/test, so no test sentence comes from a video seen in training.
+Frames are kept at 10\,fps and at most 256 per clip.
+
+\paragraph{Systems.} All systems share the decoder, optimiser and data (Table~\ref{tab:main}).
+\textbf{B0}: body + hands, single-rate encoder, no speed augmentation (the setting of current ISL
+work). \textbf{B1}: B0 + multi-rate encoder + speed augmentation. \textbf{F-*}: B1 + one facial region
+(mouth / eyes / eyebrows / head pose = outline + nose). \textbf{\fast}: all regions, gated.
+\textbf{\fast-concat} and \textbf{\fast{} w/o aug} isolate the gate and the augmentation.
+
+\paragraph{Training.} AdamW (encoder lr $3{\cdot}10^{-4}$, T5 lr $10^{-4}$, weight decay 0.01), 1k
+warm-up steps then cosine decay, batch 32, label smoothing 0.1, up to 30 epochs with early stopping on
+validation BLEU-4 (patience 6), bf16 on one \todo{GPU}.
+
+\paragraph{Metrics.} BLEU-4 \citep{papineni2002bleu} with SacreBLEU \citep{post2018sacrebleu}, chrF
+\citep{popovic2015chrf} and ROUGE-L \citep{lin2004rouge}. \emph{Speed robustness}: the test set
+replayed 1.5$\times$ and 2$\times$ faster. \emph{Non-manual accuracy}: a reference is a question if it
+ends with ``?'' and is negated if it contains a negation word (\emph{not, no, never, n't, \ldots});
+question (negation) accuracy is the share of test sentences where the output agrees with the reference
+on this property. These automatic tags are a proxy; \S\ref{sec:limits} discusses their limits.
+\emph{Streaming}: we rebuild continuous signing by joining five consecutive test sentences of the same
+video with 0.8\,s, 0.4\,s or no pause, and report sentence-boundary F1 (tolerance 0.5\,s), stream-level
+BLEU-4 and per-sentence latency.
+
+\section{Results}
+
+\input{results_table}
+
+\paragraph{Main result.} \todo{Describe Table~\ref{tab:main}: FaST vs B0 BLEU-4 / chrF; relative gain;
+which components contribute (B1 vs B0 = speed robustness; FaST vs B1 = face).}
+
+\paragraph{Which facial region matters?} \todo{Compare F-mouth, F-eyes, F-eyebrows, F-head; relate to
+\citet{pham2025facial} (mouth most informative for recognition).}
+
+\paragraph{Fast signing.} \todo{BLEU-4 at 1.5$\times$/2$\times$ as a share of the 1$\times$ score, for
+B0 vs FaST.}
+
+\paragraph{Non-manual grammar.} \todo{Question and negation accuracy; examples where FaST gets the
+question form right and B0 does not (from predictions\_speed1.0.tsv).}
+
+\paragraph{Gate behaviour.} \todo{Mean gate value per frame; is it higher on question/negation
+sentences?}
+
+\paragraph{Streaming.} \todo{Table: boundary F1, stream BLEU-4 and latency for each pause length and
+speed; FPS of the full demo on a laptop CPU.}
+
+\paragraph{Sanity check on controlled data.} Before training on iSign we verified the pipeline on a
+synthetic sign language in the same keypoint format, where some meaning is carried \emph{only} by the
+face: raised eyebrows mark a question and a head shake inserts ``not''. Appendix~\ref{app:synthetic}
+shows that the face stream and speed augmentation behave as intended there. These numbers test the
+implementation, not ISL.
+
+\section{Limitations}\label{sec:limits}
+Face keypoints from MediaPipe are noisy under occlusion by the hands, which are often in front of the
+face in ISL. Our non-manual tags come from English punctuation and negation words, not from annotation of
+the signing, so they measure whether the output has the right sentence type, not whether the model used
+the right cue. A hand-annotated non-manual test subset with ISL interpreters is future work. Streams are
+built by joining clips cut from the same video, which approximates but does not equal natural continuous
+signing. iSign is released for research use only; a deployed product needs separately consented data.
+Our evaluation does not include Deaf users; a user study is planned.
+
+\section*{Ethics Statement}
+Sign language technology should be built with Deaf communities. Our demo processes video locally and
+sends only keypoints to the model. Errors in translation could mislead in important settings (health,
+law), so the system is a research prototype, not a replacement for interpreters.
+
+\bibliography{references}
+
+\appendix
+\section{Synthetic sanity check}\label{app:synthetic}
+The toy language has 20 words; each word is a distinct right-hand path and hand shape. Sentences have
+3--4 words; 30\% are questions (eyebrows raised, text ends with ``?'') and 30\% negations (head shakes,
+``not'' inserted after the subject, with no manual sign). Training/validation/test: 2000/200/300
+sentences. Both models use the same small configuration and 12 epochs.
+
+\input{synthetic_table}
+
+\end{document}

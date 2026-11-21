@@ -57,6 +57,29 @@ def main_table(res):
         "\\label{tab:main}\\end{table*}"])
 
 
+def synthetic_table(res):
+    rows = []
+    names = {"syn_B0": "Body + hands", "syn_B1": "+ speed aug, multi-rate",
+             "syn_FaST_noaug": "+ gated face (no speed aug)", "syn_FaST": "FaST-ISL (full)"}
+    for n, label in names.items():
+        if n not in res:
+            continue
+        r = res[n]
+        s1 = r["speed_1.0"]
+        rows.append(" & ".join([label, fmt(s1["all"]["bleu4"]),
+                                fmt(r["speed_1.5"]["all"]["bleu4"]), fmt(r["speed_2.0"]["all"]["bleu4"]),
+                                f"{s1['nonmanual']['question_acc']:.1f}",
+                                f"{s1['nonmanual']['negation_acc']:.1f}"]) + " \\\\")
+    return "\n".join([
+        "\\begin{table}[h]\\centering\\small",
+        "\\begin{tabular}{lrrrrr}\\toprule",
+        "Model & B4 & B4@1.5$\\times$ & B4@2$\\times$ & Q acc & Neg acc \\\\ \\midrule",
+        *rows, "\\bottomrule\\end{tabular}",
+        "\\caption{Synthetic sanity check (not ISL). Questions are marked only by the eyebrows and "
+        "negation only by a head shake, so only face-aware models can get them right.}",
+        "\\label{tab:synthetic}\\end{table}"])
+
+
 def markdown(res):
     lines = ["| run | BLEU-4 | chrF | ROUGE-L | BLEU-4 @1.5x | BLEU-4 @2x | question acc | negation acc |",
              "|---|---|---|---|---|---|---|---|"]
@@ -75,12 +98,13 @@ def main():
     ap.add_argument("runs", nargs="?", default="runs")
     ap.add_argument("--out", default="paper/results_table.tex")
     ap.add_argument("--only", nargs="*", help="run names to include")
+    ap.add_argument("--synthetic", action="store_true", help="write the appendix table instead")
     args = ap.parse_args()
     res = load(Path(args.runs))
     if args.only:
         res = {k: v for k, v in res.items() if k in args.only}
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-    Path(args.out).write_text(main_table(res) + "\n")
+    Path(args.out).write_text((synthetic_table(res) if args.synthetic else main_table(res)) + "\n")
     md = markdown(res)
     Path(args.out).with_suffix(".md").write_text(md + "\n")
     print(md)

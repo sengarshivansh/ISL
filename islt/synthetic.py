@@ -38,6 +38,7 @@ def _word_params(word: str):
 _FACE_RNG = np.random.default_rng(7)
 _FACE_TEMPLATE = _FACE_RNG.uniform(-1, 1, (N_FACE, 2)) * np.array([0.04, 0.05])
 _BROWS = np.array(FACE_REGIONS["eyebrows"])
+_NOSE = np.array(FACE_REGIONS["nose"])
 _HAND_TEMPLATE = np.concatenate([[[0, 0]], *[
     np.stack([np.full(4, (f - 2) * 0.012), -np.arange(1, 5) * 0.012], 1) for f in range(5)]])
 
@@ -90,9 +91,10 @@ def render(words, kind, rng: random.Random, frames_per_word=8, noise=0.002) -> n
         pose[15, :2] = [0.38, 0.85]
         pose[:, 3] = 1.0
         fc = face_c.copy()
-        if kind == "negation":
-            fc[0] += 0.012 * np.sin(2 * np.pi * i / 6)
+        shake = np.sin(2 * np.pi * i / 6) if kind == "negation" else 0.0
+        fc[0] += 0.012 * shake
         face = _FACE_TEMPLATE + fc
+        face[_NOSE, 0] += 0.008 * shake      # head turns: the nose moves more than the outline
         if kind == "question":
             face[_BROWS, 1] -= 0.012
         lh = _hand(np.array([0.38, 0.85]), np.ones(5))

@@ -2,7 +2,8 @@
 FaST-ISL model: Face-aware, Speed-robust pose-to-English translator.
 
     body, hands, present ──► manual projection ─┐
-    face, head          ──► face projection  ───┼─► gated fusion (h = m + g ⊙ f)
+    face  ─► face proj ┐
+    head pose ─► head proj ┴► f ──────────────┼─► gated fusion (h = m + g ⊙ f)
                                                 ▼
              multi-rate temporal conv (dilations 1, 2, 4), stride 2
                                                 ▼
@@ -113,7 +114,8 @@ class PoseEncoder(nn.Module):
             pts = torch.tensor(face_points(cfg.face_region))
             self.register_buffer("face_cols", torch.stack([2 * pts, 2 * pts + 1], 1).reshape(-1),
                                  persistent=False)
-            self.face = Proj(cfg.face_dim * 2 + STREAM_DIMS["head"] * 2, d, cfg.dropout)
+            self.face = Proj(cfg.face_dim * 2, d, cfg.dropout)
+            self.head = Proj(STREAM_DIMS["head"] * 2, d, cfg.dropout)  # own stream: 6 numbers would drown in 300
             if cfg.fusion == "gate":
                 self.gate = nn.Linear(2 * d, d)
                 nn.init.constant_(self.gate.bias, -1.0)  # start mostly closed, open if useful
@@ -132,8 +134,7 @@ class PoseEncoder(nn.Module):
                   + self.present(batch["present"]))
         if self.cfg.use_face:
             face = batch["face"].index_select(-1, self.face_cols)
-            fin = torch.cat([with_velocity(face, m), with_velocity(batch["head"], m)], -1)
-            f = self.face(fin)
+            f = self.face(with_velocity(face, m)) + self.head(with_velocity(batch["head"], m))
             if self.cfg.fusion == "gate":
                 g = torch.sigmoid(self.gate(torch.cat([manual, f], -1)))
                 self.last_gate = g.detach()
