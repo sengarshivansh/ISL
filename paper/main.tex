@@ -28,8 +28,10 @@ recent continuous ISL-to-English translation system we survey (including all ISL
 uses body and hand keypoints only. These systems are also trained and tested at one natural signing
 speed, and they translate pre-cut clips rather than live, unsegmented signing. We present \fast{}, a
 pose-to-text translator that adds (i)~a gated face and head-pose stream, (ii)~speed robustness via a
-multi-rate temporal encoder and 0.5--2$\times$ temporal resampling, and (iii)~a pause-driven streaming
-segmenter that turns continuous signing into sentence-level English text and speech in real time. On
+multi-rate temporal encoder and 0.5--2$\times$ temporal resampling, and (iii)~a learned, causal
+sentence-boundary detector that turns continuous signing into sentence-level English text and speech in
+real time, even when the signer is fast or does not pause. A pause-threshold baseline, by contrast,
+merges sentences as soon as signing speeds up. On
 the iSign benchmark, \fast{} improves BLEU-4 from \todo{x} to \todo{y} (\todo{+z\%} relative) over a
 body+hands baseline with the same decoder, keeps \todo{p\%} of its accuracy when signing is twice as
 fast (baseline: \todo{q\%}), and raises question-form accuracy from \todo{a} to \todo{b}. A region
@@ -74,8 +76,10 @@ We reviewed the recent ISL recognition and translation literature, including all
   \emph{speed-perturbed} iSign test protocol (1.5$\times$, 2$\times$).
 \item A non-manual evaluation: question- and negation-form accuracy on iSign, alongside BLEU, chrF and
   ROUGE-L.
-\item A streaming system: a motion-energy pause segmenter, a stream-level evaluation on reassembled
-  iSign videos, and an open-source web demo producing English text and speech.
+\item A streaming system: a learned causal sentence-boundary detector trained on stitched streams with
+  random speed and pause length, a stream-level evaluation on reassembled iSign videos, and an
+  open-source web demo producing English text and speech. We show that a pause-threshold segmenter
+  fails on fast or pause-free signing while the learned detector does not.
 \end{itemize}
 
 \section{Related Work}\label{sec:related}
@@ -149,12 +153,29 @@ A linear bridge maps encoder states to the input embedding space of a pretrained
 \citet{dhamecha2026temporal}. We decode with beam size 4.
 
 \subsection{Streaming segmentation}
-For live use, a segmenter receives keypoints at 10\,fps. It tracks the hands' motion energy
+\paragraph{Pause rule (baseline).} For live use, a segmenter receives keypoints at 10\,fps. It tracks the hands' motion energy
 $e_t = \max_{\text{hand}} \lVert \bar{p}_t - \bar{p}_{t-1} \rVert / w_t$ (mean hand position, shoulder
 width $w_t$), smoothed by an exponential moving average. A sentence starts when a hand is in the
 signing space and $e_t$ exceeds $\tau_{on}$, and ends after 0.6\,s with $e_t < \tau_{off}$ (hysteresis)
 or with the hands lowered. Sentences longer than 12\,s are cut at the calmest recent frame to bound
 latency. Each finished segment is translated at once and spoken with text-to-speech.
+
+\paragraph{Why a pause rule is not enough.} When a person signs twice as fast, a 0.8\,s pause lasts
+0.4\,s and falls under any fixed threshold, so consecutive sentences merge into one long segment that
+the translator cannot handle (Table~\ref{tab:synthetic-stream}). Fluent signers also often move
+straight into the next sentence without pausing.
+
+\paragraph{Learned boundary detector.} We therefore train a small causal network (0.4M parameters) to
+predict sentence ends frame by frame. It reads the body, hand, head-pose and presence streams (with
+velocities), applies a causal temporal convolution (kernel 5) and a two-layer GRU ($d{=}128$), and
+outputs $p_t$, the probability that a sentence ended at frame $t-\delta$. The look-ahead $\delta = 3$
+frames (0.3\,s) lets it see the start of the next sentence. Training streams join 2--5 consecutive
+training sentences of the same video; each stream is replayed at a speed drawn log-uniformly from
+$[0.5, 2]$ and each gap gets a pause of 0--1.2\,s, or none at all with probability 0.35. Targets are 1
+within $\pm1$ frame of each sentence end; we use binary cross-entropy with positive weight 8. At run time
+the GRU state is carried across frames, a boundary is emitted at local maxima of $p_t$ above 0.5 (with a
+0.6\,s refractory period), and still frames at both ends of a segment are trimmed so pause holds are not
+translated.
 
 \section{Experimental Setup}
 
@@ -180,8 +201,9 @@ ends with ``?'' and is negated if it contains a negation word (\emph{not, no, ne
 question (negation) accuracy is the share of test sentences where the output agrees with the reference
 on this property. These automatic tags are a proxy; \S\ref{sec:limits} discusses their limits.
 \emph{Streaming}: we rebuild continuous signing by joining five consecutive test sentences of the same
-video with 0.8\,s, 0.4\,s or no pause, and report sentence-boundary F1 (tolerance 0.5\,s), stream-level
-BLEU-4 and per-sentence latency.
+video with 0.8\,s, 0.4\,s or no pause, replay each stream at 1$\times$, 1.5$\times$ and 2$\times$, and
+report sentence-boundary F1 (tolerance 0.5\,s), stream-level BLEU-4 and per-sentence latency for the pause
+rule and the learned detector.
 
 \section{Results}
 
@@ -202,14 +224,16 @@ question form right and B0 does not (from predictions\_speed1.0.tsv).}
 \paragraph{Gate behaviour.} \todo{Mean gate value per frame; is it higher on question/negation
 sentences?}
 
-\paragraph{Streaming.} \todo{Table: boundary F1, stream BLEU-4 and latency for each pause length and
-speed; FPS of the full demo on a laptop CPU.}
+\paragraph{Streaming.} \todo{iSign version of Table~\ref{tab:synthetic-stream}: boundary F1, stream
+BLEU-4 and latency for each pause length and speed, pause rule vs.\ learned detector; FPS of the full demo
+on a laptop CPU (MediaPipe + model: 26\,ms per frame measured so far on an Apple M3).}
 
 \paragraph{Sanity check on controlled data.} Before training on iSign we verified the pipeline on a
 synthetic sign language in the same keypoint format, where some meaning is carried \emph{only} by the
 face: raised eyebrows mark a question and a head shake inserts ``not''. Appendix~\ref{app:synthetic}
-shows that the face stream and speed augmentation behave as intended there. These numbers test the
-implementation, not ISL.
+shows that the face stream and speed augmentation behave as intended there, and that on continuous
+streams the learned boundary detector keeps boundary F1 at 100 while the pause rule drops to 40 at
+2$\times$ speed. These numbers test the implementation, not ISL.
 
 \section{Limitations}\label{sec:limits}
 Face keypoints from MediaPipe are noisy under occlusion by the hands, which are often in front of the
@@ -232,8 +256,23 @@ law), so the system is a research prototype, not a replacement for interpreters.
 The toy language has 20 words; each word is a distinct right-hand path and hand shape. Sentences have
 3--4 words; 30\% are questions (eyebrows raised, text ends with ``?'') and 30\% negations (head shakes,
 ``not'' inserted after the subject, with no manual sign). Training/validation/test: 2000/200/300
-sentences. Both models use the same small configuration and 12 epochs.
+sentences. All models use the same small configuration and 12 epochs.
 
 \input{synthetic_table}
+
+Table~\ref{tab:synthetic} isolates each component. Speed augmentation (B0$\to$B1) raises BLEU-4 at
+2$\times$ speed from 16.1 to 53.7 without changing normal-speed quality. Adding the face and head
+streams (B1$\to$FaST) lifts question and negation accuracy from chance level (68--69\%, i.e.\ always
+predicting the majority form) to 100\%. Without speed augmentation the face-aware model is perfect at
+normal speed but falls to 28.1 BLEU-4 at 2$\times$. In an earlier version, the six head-pose values
+shared one projection with the 304 face coordinates and negation stayed at chance; giving head pose its
+own projection fixed this, which motivated the design in \S3.2.
+
+For streaming (Table~\ref{tab:synthetic-stream}), test sentences are joined four at a time. The pause
+rule only works with long pauses at normal speed; the learned detector finds every boundary in all six
+settings, and the remaining drop in stream BLEU-4 at 2$\times$ comes from the translator, not from
+segmentation. Mean model latency was 66--100\,ms per sentence on an Apple M3.
+
+\input{synthetic_stream_table}
 
 \end{document}

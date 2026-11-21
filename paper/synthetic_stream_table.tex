@@ -1,0 +1,13 @@
+\begin{table}[h]\centering\small
+\begin{tabular}{llrrrr}\toprule
+& & \multicolumn{2}{c}{Boundary F1} & \multicolumn{2}{c}{Stream BLEU-4} \\
+Pause & Speed & rule & learned & rule & learned \\ \midrule
+0.8\,s & 1$\times$ & 90.0 & 100.0 & 99.1 & 98.8 \\
+0.8\,s & 2$\times$ & 40.0 & 100.0 & 2.6 & 87.4 \\
+0.4\,s & 1$\times$ & 51.5 & 100.0 & 33.6 & 98.8 \\
+0.4\,s & 2$\times$ & 40.0 & 100.0 & 3.1 & 87.7 \\
+0.0\,s & 1$\times$ & 66.0 & 100.0 & 26.6 & 98.8 \\
+0.0\,s & 2$\times$ & 40.0 & 100.0 & 2.4 & 86.6 \\
+\bottomrule\end{tabular}
+\caption{Continuous signing (synthetic, streams of 4 sentences). Boundary F1 and stream BLEU-4 for the pause rule vs.\ the learned boundary detector.}
+\label{tab:synthetic-stream}\end{table}

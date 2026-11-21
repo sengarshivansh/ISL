@@ -71,13 +71,35 @@ def synthetic_table(res):
                                 f"{s1['nonmanual']['question_acc']:.1f}",
                                 f"{s1['nonmanual']['negation_acc']:.1f}"]) + " \\\\")
     return "\n".join([
-        "\\begin{table}[h]\\centering\\small",
+        "\\begin{table}[h]\\centering\\small\\resizebox{\\columnwidth}{!}{%",
         "\\begin{tabular}{lrrrrr}\\toprule",
         "Model & B4 & B4@1.5$\\times$ & B4@2$\\times$ & Q acc & Neg acc \\\\ \\midrule",
-        *rows, "\\bottomrule\\end{tabular}",
+        *rows, "\\bottomrule\\end{tabular}}",
         "\\caption{Synthetic sanity check (not ISL). Questions are marked only by the eyebrows and "
         "negation only by a head shake, so only face-aware models can get them right.}",
         "\\label{tab:synthetic}\\end{table}"])
+
+
+def stream_table(pause_file, learned_file, label="tab:synthetic-stream", caption=None):
+    """Pause-based vs learned segmenter: boundary F1 and stream BLEU-4 per pause / speed."""
+    pa = {(r["pause_s"], r["speed"]): r for r in json.loads(Path(pause_file).read_text())}
+    le = {(r["pause_s"], r["speed"]): r for r in json.loads(Path(learned_file).read_text())}
+    rows = []
+    for key in sorted(pa, key=lambda k: (-k[0], k[1])):
+        if key not in le:
+            continue
+        p, l = pa[key], le[key]
+        rows.append(f"{key[0]:.1f}\\,s & {key[1]:.0f}$\\times$ & {p['boundary_f1']:.1f} & {l['boundary_f1']:.1f} & "
+                    f"{p.get('stream_bleu4', 0):.1f} & {l.get('stream_bleu4', 0):.1f} \\\\")
+    caption = caption or ("Continuous signing (synthetic, streams of 4 sentences). Boundary F1 and stream "
+                          "BLEU-4 for the pause rule vs.\\ the learned boundary detector.")
+    return "\n".join([
+        "\\begin{table}[h]\\centering\\small",
+        "\\begin{tabular}{llrrrr}\\toprule",
+        "& & \\multicolumn{2}{c}{Boundary F1} & \\multicolumn{2}{c}{Stream BLEU-4} \\\\",
+        "Pause & Speed & rule & learned & rule & learned \\\\ \\midrule",
+        *rows, "\\bottomrule\\end{tabular}",
+        f"\\caption{{{caption}}}", f"\\label{{{label}}}\\end{{table}}"])
 
 
 def markdown(res):
@@ -99,7 +121,13 @@ def main():
     ap.add_argument("--out", default="paper/results_table.tex")
     ap.add_argument("--only", nargs="*", help="run names to include")
     ap.add_argument("--synthetic", action="store_true", help="write the appendix table instead")
+    ap.add_argument("--stream", nargs=2, metavar=("PAUSE_JSON", "LEARNED_JSON"),
+                    help="write the streaming comparison table instead")
     args = ap.parse_args()
+    if args.stream:
+        Path(args.out).write_text(stream_table(*args.stream) + "\n")
+        print(Path(args.out).read_text())
+        return
     res = load(Path(args.runs))
     if args.only:
         res = {k: v for k, v in res.items() if k in args.only}
