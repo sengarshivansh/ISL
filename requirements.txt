@@ -11,3 +11,4 @@ uvicorn[standard]
 mediapipe==1.2.0
 opencv-python
 pytest
+python-multipart

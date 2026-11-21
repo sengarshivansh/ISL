@@ -14,3 +14,4 @@ notes/
 runs/
 checkpoints/
 *.pt
+models/

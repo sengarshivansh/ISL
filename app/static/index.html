@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FaST-ISL · Sign to Speech</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">✋</span>
+    <div>
+      <h1>FaST-ISL</h1>
+      <p>Continuous Indian Sign Language → English text and voice</p>
+    </div>
+  </div>
+  <div id="pill" class="pill idle">Idle</div>
+</header>
+
+<div id="banner" class="banner" hidden>
+  <strong>Demo mode.</strong> No trained model is loaded, so sentences are detected and timed but
+  not translated yet. Start the server with <code>ISL_CHECKPOINT=runs/FaST/best.pt</code> once training is done.
+</div>
+
+<nav class="tabs" role="tablist">
+  <button class="tab active" data-tab="live" role="tab">Live camera</button>
+  <button class="tab" data-tab="upload" role="tab">Upload video</button>
+  <button class="tab" data-tab="about" role="tab">How it works</button>
+</nav>
+
+<main>
+  <section id="live" class="panel active">
+    <div class="grid">
+      <div class="stage">
+        <video id="cam" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+        <div class="stage-empty" id="stageEmpty">
+          <p>Your camera stays on this computer. Only landmarks are processed.</p>
+          <button id="startBtn" class="primary">Start camera</button>
+        </div>
+        <div class="meter"><div id="energy"></div></div>
+      </div>
+      <aside class="side">
+        <div class="side-head">
+          <h2>Transcript</h2>
+          <label class="toggle"><input type="checkbox" id="speak" checked> Speak aloud</label>
+        </div>
+        <ol id="transcript" class="transcript"><li class="hint">Sign a sentence, then pause briefly. The sentence appears here.</li></ol>
+        <div class="stats">
+          <div><span id="fps">–</span><small>fps</small></div>
+          <div><span id="lat">–</span><small>ms model</small></div>
+          <div><span id="count">0</span><small>sentences</small></div>
+        </div>
+        <button id="stopBtn" class="ghost" disabled>Stop</button>
+      </aside>
+    </div>
+  </section>
+
+  <section id="upload" class="panel">
+    <div class="upload-box">
+      <input type="file" id="file" accept="video/*">
+      <p>Choose a video of continuous signing. It is split into sentences at the signer's pauses
+        and each sentence is translated.</p>
+      <button id="uploadBtn" class="primary" disabled>Translate video</button>
+    </div>
+    <ol id="vresult" class="transcript"></ol>
+  </section>
+
+  <section id="about" class="panel">
+    <ol class="pipeline">
+      <li><b>Camera</b><span>10 frames per second</span></li>
+      <li><b>MediaPipe Holistic</b><span>body, both hands, 152 face points</span></li>
+      <li><b>Pause detector</b><span>cuts continuous signing into sentences</span></li>
+      <li><b>FaST-ISL model</b><span>gated face stream + multi-rate encoder + T5</span></li>
+      <li><b>English</b><span>text and speech</span></li>
+    </ol>
+    <div class="cards">
+      <article><h3>Face-aware</h3><p>In ISL, raised eyebrows mark a question and a head shake marks a negation.
+        Most systems drop the face. FaST-ISL adds it through a learned gate that opens only when the face carries meaning.</p></article>
+      <article><h3>Speed-robust</h3><p>People sign at different speeds. The model is trained on clips replayed
+        between 0.5× and 2× speed and sees motion at several time scales at once.</p></article>
+      <article><h3>Streaming</h3><p>No buttons between sentences: a motion-energy pause detector finds sentence ends
+        in live signing, so each sentence is translated as soon as you finish it.</p></article>
+    </div>
+  </section>
+</main>
+
+<footer>Research prototype. Trained on the iSign benchmark (research use only).</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>
