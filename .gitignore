@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.ipynb_checkpoints/
+.env
+
+# Local only - not pushed
+demo/
+main_paper/
+papers_web/
+papers_extra/
+notes/
