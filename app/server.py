@@ -27,10 +27,20 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from islt.holistic import HolisticExtractor, vector_to_draw, video_to_keypoints
-from islt.stream import Segmenter, SegmenterConfig, segment_stream
+from islt.stream import Segmenter, SegmenterConfig, frame_energy, segment_stream
+
+
+def make_segmenter():
+    """Learned boundary detector if available (robust to fast signing and no pauses),
+    otherwise the pause-based rule."""
+    if BOUNDARY:
+        from islt.boundary import LearnedSegmenter
+        return LearnedSegmenter(BOUNDARY, fps=FPS)
+    return Segmenter(SegmenterConfig(fps=FPS))
 
 STATIC = Path(__file__).parent / "static"
 CHECKPOINT = os.environ.get("ISL_CHECKPOINT")
+BOUNDARY = os.environ.get("ISL_BOUNDARY")  # learned sentence-boundary model (islt/boundary.py)
 FPS = 10.0
 
 app = FastAPI(title="FaST-ISL")
@@ -63,15 +73,16 @@ def index():
 
 @app.get("/api/status")
 def status():
-    return {"model_loaded": bool(CHECKPOINT), "checkpoint": CHECKPOINT, "fps": FPS}
+    return {"model_loaded": bool(CHECKPOINT), "checkpoint": CHECKPOINT, "fps": FPS,
+            "segmenter": "learned" if BOUNDARY else "pause"}
 
 
 @app.websocket("/ws")
 async def ws(sock: WebSocket):
     await sock.accept()
     extractor = await asyncio.to_thread(HolisticExtractor)
-    seg = Segmenter(SegmenterConfig(fps=FPS))
-    t0 = None
+    seg = await asyncio.to_thread(make_segmenter)
+    t0, prev, motion = None, None, 0.0
     try:
         while True:
             msg = await sock.receive_bytes()
@@ -82,9 +93,12 @@ async def ws(sock: WebSocket):
                 continue
             rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             vec = await asyncio.to_thread(extractor, rgb, int((ts - t0) * 1000))
-            done = seg.push(vec, ts - t0)
+            done = await asyncio.to_thread(seg.push, vec, ts - t0)
+            e, up = frame_energy(prev, vec)
+            prev = vec
+            motion = 0.6 * motion + 0.4 * e  # for the on-screen signing indicator only
             await sock.send_json({"type": "frame", "landmarks": vector_to_draw(vec),
-                                  "signing": seg.active, "energy": round(float(seg.ema), 4)})
+                                  "signing": bool(up and motion > 0.03), "energy": round(float(motion), 4)})
             for s in done:
                 await sock.send_json({"type": "translating"})
                 text, ms, trained = await translate(s.clip)
@@ -105,7 +119,7 @@ async def video(file: UploadFile = File(...)):
     try:
         t0 = time.perf_counter()
         kps = await asyncio.to_thread(video_to_keypoints, path, FPS)
-        segs = segment_stream(kps, SegmenterConfig(fps=FPS))
+        segs = segment_stream(kps, SegmenterConfig(fps=FPS), make_segmenter() if BOUNDARY else None)
         hands_seen = (np.abs(kps[:, 588:]).sum(1) > 0).mean() if len(kps) else 0.0
         if not segs and len(kps) >= FPS and hands_seen > 0.2:  # one pre-cut sentence clip
             from islt.stream import Segment

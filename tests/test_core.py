@@ -115,3 +115,30 @@ def test_model_forward_and_generate(toy, region, fusion):
     out.loss.backward()
     gen = model.generate(batch, max_new_tokens=5, num_beams=1)
     assert gen.shape[0] == 4
+
+
+def test_boundary_labels_and_training_stream():
+    from islt.boundary import DELAY, labels_for, make_training_stream
+    y = labels_for(50, [20], width=1)
+    assert y[20 + DELAY] == 1 and y.sum() == 3
+    items, clips = make_dataset(3, seed=4)
+    stream, ends = make_training_stream([clips[u] for u, _ in items], random.Random(0))
+    assert len(ends) == 2 and ends[-1] < len(stream)
+
+
+def test_learned_segmenter_runs(tmp_path):
+    from islt.boundary import BoundaryNet, LearnedSegmenter
+    torch.save({"model": BoundaryNet().state_dict()}, tmp_path / "b.pt")
+    seg = LearnedSegmenter(str(tmp_path / "b.pt"), threshold=0.0)  # untrained: must just not crash
+    rng = random.Random(3)
+    stream, _, _ = make_stream([make_sentence(rng) for _ in range(2)], rng)
+    assert all(s.end > s.start for s in segment_stream(stream, segmenter=seg))
+
+
+def test_trim_static_removes_holds():
+    from islt.boundary import trim_static
+    rng = random.Random(5)
+    stream, _, _ = make_stream([make_sentence(rng)], rng)
+    clip, _ = trim_static(stream, 0)
+    assert clip is not None and len(clip) < len(stream)
+    assert trim_static(np.repeat(stream[:1], 20, axis=0), 0)[0] is None

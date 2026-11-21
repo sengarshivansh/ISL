@@ -10,7 +10,7 @@ Three things make it different from current ISL translators:
 |---|---|---|
 | Face and head | Dropped: body and hand keypoints only | Gated face stream (mouth, eyes, eyebrows) and a separate head-pose stream |
 | Signing speed | One speed, never tested faster | Multi-rate encoder, 0.5–2× speed augmentation, tests at 1.5× and 2× |
-| Continuous signing | Pre-cut clips | Pause-based streaming segmenter, live web demo with speech |
+| Continuous signing | Pre-cut clips | Learned sentence-boundary detector that works at 2× speed and with no pauses, plus a live web demo with speech |
 
 The plan and current status are in [`ROADMAP.md`](ROADMAP.md). The literature review is in [`RESEARCH_GAP_ANALYSIS.md`](RESEARCH_GAP_ANALYSIS.md). The paper draft is in [`paper/`](paper/).
 
@@ -23,7 +23,8 @@ islt/            the library
   model.py       FaST-ISL: streams -> gated fusion -> multi-rate conv -> Transformer -> T5
   train.py       training + evaluation (python -m islt.train --config ...)
   metrics.py     BLEU-4, chrF, ROUGE-L, question/negation accuracy
-  stream.py      streaming segmenter + translator
+  stream.py      pause-based streaming segmenter + translator
+  boundary.py    learned sentence-boundary detector (fast / no-pause signing)
   eval_stream.py continuous-signing evaluation (boundary F1, stream BLEU, latency)
   holistic.py    live MediaPipe Holistic -> model input
   synthetic.py   toy sign language for testing the pipeline without iSign
@@ -39,7 +40,7 @@ tests/           unit tests (python -m pytest)
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m pytest                                   # 14 tests
+.venv/bin/python -m pytest                                   # 17 tests
 .venv/bin/python -m islt.train --config configs/synthetic.yaml   # pipeline check on toy data (~5 min)
 .venv/bin/python -m app.server                               # demo at http://localhost:8000
 ```
@@ -47,7 +48,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 The demo runs before any model is trained. In that mode it detects and times each sentence but does not translate it. After training, run it with the real model:
 
 ```bash
-ISL_CHECKPOINT=runs/FaST/best.pt .venv/bin/python -m app.server
+ISL_CHECKPOINT=runs/FaST/best.pt ISL_BOUNDARY=runs/boundary/boundary.pt .venv/bin/python -m app.server
 ```
 
 ## Real experiments (iSign)

@@ -71,7 +71,7 @@
     <ol class="pipeline">
       <li><b>Camera</b><span>10 frames per second</span></li>
       <li><b>MediaPipe Holistic</b><span>body, both hands, 152 face points</span></li>
-      <li><b>Pause detector</b><span>cuts continuous signing into sentences</span></li>
+      <li><b>Sentence detector</b><span>learned boundary model; works with fast signing and no pauses</span></li>
       <li><b>FaST-ISL model</b><span>gated face stream + multi-rate encoder + T5</span></li>
       <li><b>English</b><span>text and speech</span></li>
     </ol>
@@ -80,8 +80,9 @@
         Most systems drop the face. FaST-ISL adds it through a learned gate that opens only when the face carries meaning.</p></article>
       <article><h3>Speed-robust</h3><p>People sign at different speeds. The model is trained on clips replayed
         between 0.5× and 2× speed and sees motion at several time scales at once.</p></article>
-      <article><h3>Streaming</h3><p>No buttons between sentences: a motion-energy pause detector finds sentence ends
-        in live signing, so each sentence is translated as soon as you finish it.</p></article>
+      <article><h3>Streaming</h3><p>No buttons between sentences: the system finds sentence ends
+        in live signing, so each sentence is translated as soon as you finish it. A small learned
+        detector finds sentence ends even when you sign fast or do not pause at all.</p></article>
     </div>
   </section>
 </main>
