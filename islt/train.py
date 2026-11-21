@@ -157,9 +157,19 @@ def train(cfg):
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=-100, label_smoothing=ls)
 
     val_items = splits["val"][: t["val_max"]]
-    best, bad, step = -1.0, 0, 0
+    best, bad, step, start_epoch = -1.0, 0, 0, 0
+    last = run_dir / "last.pt"
+    if last.exists():  # resume after a Colab disconnect
+        st = torch.load(last, map_location=device, weights_only=False)
+        model.load_state_dict(st["model"])
+        opt.load_state_dict(st["opt"])
+        sched.load_state_dict(st["sched"])
+        best, bad, step, start_epoch = st["best"], st["bad"], st["step"], st["epoch"] + 1
+        print(f"resumed from epoch {st['epoch']} (best {best:.2f})", flush=True)
     log = open(run_dir / "log.jsonl", "a")
-    for epoch in range(t["epochs"]):
+    for epoch in range(start_epoch, t["epochs"]):
+        if bad >= t["patience"]:
+            break
         model.train()
         t0, run_loss = time.time(), 0.0
         for batch in dl:
@@ -196,12 +206,16 @@ def train(cfg):
                        run_dir / "best.pt")
         else:
             bad += 1
-            if bad >= t["patience"]:
-                print("early stop", flush=True)
-                break
+        torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(),
+                    "best": best, "bad": bad, "step": step, "epoch": epoch}, last)
+        if bad >= t["patience"]:
+            print("early stop", flush=True)
+            break
     ckpt = torch.load(run_dir / "best.pt", map_location=device, weights_only=False)
     model.load_state_dict(ckpt["model"])
-    return evaluate(model, splits, get_raw, tok, cfg, device, run_dir)
+    results = evaluate(model, splits, get_raw, tok, cfg, device, run_dir)
+    last.unlink(missing_ok=True)  # finished: the optimizer state is no longer needed
+    return results
 
 
 def load_model(path, device=None):
