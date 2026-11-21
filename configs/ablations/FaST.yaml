@@ -1,0 +1,3 @@
+name: FaST
+model: {face_region: all, fusion: gate, multirate: true}
+aug: {speed_prob: 0.5}

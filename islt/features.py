@@ -158,7 +158,7 @@ def resample_speed(raw: np.ndarray, speed: float) -> np.ndarray:
     a, b = raw[lo], raw[hi]
     out = a * (1 - w) + b * w
     # a part missing in either neighbour frame -> take the nearer frame as-is
-    near = np.where(w < 0.5, lo, hi)
+    near = np.where(w[:, 0] < 0.5, lo, hi)
     zero_mix = ((a == 0) | (b == 0))
     out[zero_mix] = raw[near][zero_mix]
     return out

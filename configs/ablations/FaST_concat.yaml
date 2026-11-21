@@ -1,0 +1,3 @@
+name: FaST_concat
+model: {face_region: all, fusion: concat, multirate: true}
+aug: {speed_prob: 0.5}

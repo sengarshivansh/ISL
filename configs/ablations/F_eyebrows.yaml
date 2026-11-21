@@ -1,0 +1,3 @@
+name: F_eyebrows
+model: {face_region: eyebrows}
+aug: {speed_prob: 0.5}

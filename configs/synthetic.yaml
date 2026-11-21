@@ -1,0 +1,7 @@
+# Sanity check on the toy sign language (islt/synthetic.py). Not a paper result.
+name: synthetic
+out_dir: runs
+data: {type: synthetic, n_train: 2000, n_val: 200, n_test: 300, max_frames: 256}
+model: {t5_name: t5-small, d_model: 128, enc_layers: 2}
+train: {epochs: 12, batch_size: 32, num_workers: 0, warmup_steps: 100, patience: 4, lr_encoder: 0.001, lr_t5: 0.0003}
+eval: {speeds: [1.0, 1.5, 2.0], num_beams: 1, batch_size: 100}

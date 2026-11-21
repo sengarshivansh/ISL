@@ -1,0 +1,3 @@
+name: F_mouth
+model: {face_region: mouth}
+aug: {speed_prob: 0.5}

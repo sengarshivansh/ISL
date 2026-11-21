@@ -1,0 +1,18 @@
+# Shared settings for every iSign run. Ablations in configs/ablations/ override these.
+out_dir: runs
+data:
+  type: isign
+  shard_dir: /content/drive/MyDrive/ISL/isign_pose_keypoints   # output of colab/isign_convert_poses.ipynb
+  csv: /content/drive/MyDrive/ISL/isign_pose_keypoints/iSign_v1.1.csv
+  max_frames: 256
+model:
+  t5_name: t5-small
+  d_model: 256
+  enc_layers: 4
+train:
+  epochs: 30
+  batch_size: 32
+  num_workers: 2
+eval:
+  speeds: [1.0, 1.5, 2.0]
+  num_beams: 4

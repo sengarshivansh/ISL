@@ -1,0 +1,3 @@
+name: B0_body_hands
+model: {face_region: none, multirate: false}
+aug: {speed_prob: 0.0}
