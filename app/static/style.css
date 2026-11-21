@@ -12,10 +12,12 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink);
   font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
-code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; }
+code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+html, body { overflow-x: hidden; }
+.brand > div { min-width: 0; }
 .top { display: flex; justify-content: space-between; align-items: center; gap: 16px;
   max-width: 1180px; margin: 0 auto; padding: 24px 16px 8px; }
-.brand { display: flex; gap: 14px; align-items: center; }
+.brand { display: flex; gap: 14px; align-items: center; min-width: 0; }
 .logo { font-size: 30px; }
 h1 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
 .brand p { margin: 0; color: var(--muted); font-size: 14px; }
@@ -34,6 +36,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 16px; }
 .panel { display: none; } .panel.active { display: block; }
 .grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; }
 @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+@media (max-width: 520px) { .top { align-items: flex-start; } .stage { aspect-ratio: 3 / 4; } .stage-empty p { font-size: 14px; } }
 .stage { position: relative; aspect-ratio: 4 / 3; background: #0b0c0e; border-radius: var(--radius); overflow: hidden; }
 .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
   transform: scaleX(-1); }
