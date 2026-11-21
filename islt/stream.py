@@ -163,9 +163,11 @@ class Translator:
         return text, (time.perf_counter() - t0) * 1000
 
 
-def segment_stream(stream: np.ndarray, cfg: SegmenterConfig | None = None) -> list[Segment]:
-    """Offline helper: run the segmenter over a whole (T, 714) stream at model fps."""
-    seg = Segmenter(cfg or SegmenterConfig())
+def segment_stream(stream: np.ndarray, cfg: SegmenterConfig | None = None, segmenter=None) -> list[Segment]:
+    """Offline helper: run a segmenter (default: pause-based) over a whole (T, 714) stream at model fps."""
+    seg = segmenter or Segmenter(cfg or SegmenterConfig())
+    if segmenter is not None:
+        seg.reset()
     out = []
     for f in stream:
         out += seg.push(f)

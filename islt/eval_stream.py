@@ -56,14 +56,15 @@ def build_streams(items, get_raw, per_stream=5, pause_s=0.8, fps=10.0, seed=0, m
     return streams[:max_streams]
 
 
-def evaluate_streams(streams, translator: Translator | None, seg_cfg=None, speed=1.0, tol_s=0.5):
+def evaluate_streams(streams, translator: Translator | None, seg_cfg=None, speed=1.0, tol_s=0.5,
+                     segmenter=None):
     seg_cfg = seg_cfg or SegmenterConfig()
     f1s, hyps, refs, lat = [], [], [], []
     for stream, texts, bounds in streams:
         if speed != 1.0:
             stream = resample_speed(stream, speed)
             bounds = [(int(a / speed), int(b / speed)) for a, b in bounds]
-        segs = segment_stream(stream, seg_cfg)
+        segs = segment_stream(stream, seg_cfg, segmenter)
         f1s.append(boundary_f1(segs, bounds, tol=int(tol_s * seg_cfg.fps)))
         if translator is not None:
             out = []
@@ -95,20 +96,26 @@ def main():
     ap.add_argument("--speeds", nargs="*", type=float, default=[1.0, 1.5, 2.0])
     ap.add_argument("--max-streams", type=int, default=200)
     ap.add_argument("--per-stream", type=int, default=5)
+    ap.add_argument("--boundary", help="learned boundary checkpoint (default: pause-based segmenter)")
     args = ap.parse_args()
     cfg = load_config(args.config)
     splits, get_raw = build_data(cfg)
     tr = Translator(args.checkpoint) if args.checkpoint else None
+    segmenter = None
+    if args.boundary:
+        from .boundary import LearnedSegmenter
+        segmenter = LearnedSegmenter(args.boundary)
     results = []
     for pause in args.pauses:
         streams = build_streams(splits["test"], get_raw, per_stream=args.per_stream, pause_s=pause,
                                 max_streams=args.max_streams)
         for sp in args.speeds:
-            r = {"pause_s": pause, **evaluate_streams(streams, tr, speed=sp)}
+            r = {"pause_s": pause, "segmenter": "learned" if args.boundary else "pause",
+                 **evaluate_streams(streams, tr, speed=sp, segmenter=segmenter)}
             print(json.dumps(r), flush=True)
             results.append(r)
-    out = Path(args.out or (Path(args.checkpoint).parent / "stream_results.json" if args.checkpoint
-                            else "runs/stream_results.json"))
+    name = "stream_results_learned.json" if args.boundary else "stream_results.json"
+    out = Path(args.out or (Path(args.checkpoint).parent / name if args.checkpoint else Path("runs") / name))
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(results, indent=1))
 
