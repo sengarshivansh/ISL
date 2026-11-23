@@ -151,8 +151,10 @@ def train(cfg):
     total = t["epochs"] * len(dl)
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1, (s + 1) / t["warmup_steps"]) *
                                               0.5 * (1 + math.cos(math.pi * min(1, s / max(1, total)))))
-    use_amp = device.type == "cuda"
-    scaler = torch.amp.GradScaler(enabled=use_amp)
+    # bf16 only where the GPU has it in hardware (A100/L4 and newer); a T4 would only emulate it,
+    # which is slower than fp32. fp16 is not used: T5 is known to overflow in fp16.
+    use_amp = device.type == "cuda" and torch.cuda.get_device_capability(device)[0] >= 8
+    scaler = torch.amp.GradScaler(enabled=False)
     ls = t["label_smoothing"]
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=-100, label_smoothing=ls)
 
