@@ -34,7 +34,8 @@ DEFAULTS = {
     "aug": {"speed_prob": 0.0, "speed_range": [0.5, 2.0], "jitter": 0.0, "frame_drop": 0.0},
     "train": {"epochs": 30, "batch_size": 32, "lr_encoder": 3e-4, "lr_t5": 1e-4,
               "weight_decay": 0.01, "warmup_steps": 1000, "grad_clip": 1.0,
-              "num_workers": 2, "patience": 6, "val_max": 2000, "label_smoothing": 0.1},
+              "num_workers": 2, "patience": 6, "val_max": 2000, "label_smoothing": 0.1,
+              "max_hours": None},  # stop cleanly before a session limit (Kaggle: 12 h) and resume later
     "eval": {"speeds": [1.0, 1.5, 2.0], "num_beams": 4, "max_new_tokens": 48, "batch_size": 64},
 }
 
@@ -169,9 +170,17 @@ def train(cfg):
         best, bad, step, start_epoch = st["best"], st["bad"], st["step"], st["epoch"] + 1
         print(f"resumed from epoch {st['epoch']} (best {best:.2f})", flush=True)
     log = open(run_dir / "log.jsonl", "a")
+    t_start, epoch_sec = time.time(), 0.0
     for epoch in range(start_epoch, t["epochs"]):
         if bad >= t["patience"]:
             break
+        # another epoch plus the final test evaluation must fit in the time budget, else stop here;
+        # last.pt is already saved, so the next session resumes from this epoch
+        if t.get("max_hours") and time.time() - t_start + 1.5 * epoch_sec > t["max_hours"] * 3600:
+            print(f"time budget of {t['max_hours']} h reached after epoch {epoch - 1}: "
+                  "run again to resume", flush=True)
+            log.close()
+            return None
         model.train()
         t0, run_loss = time.time(), 0.0
         for batch in dl:
@@ -197,6 +206,7 @@ def train(cfg):
                "val_question_acc": val["nonmanual"]["question_acc"],
                "val_negation_acc": val["nonmanual"]["negation_acc"],
                "sec": round(time.time() - t0)}
+        epoch_sec = time.time() - t0
         if mcfg.use_face and mcfg.fusion == "gate" and model.encoder.last_gate is not None:
             rec["mean_gate"] = float(model.encoder.last_gate.mean())
         print(json.dumps(rec), flush=True)

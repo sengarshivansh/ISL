@@ -71,7 +71,14 @@ def file_part_chunks(paths, chunk=8 << 20):
 def face_indices():
     """Lips, eyes, eyebrows, face oval and nose: the face points that carry ISL
     non-manual markers. Iris points (468+) are not in iSign's pose files."""
-    from mediapipe.tasks.python.vision import FaceLandmarksConnections as F
+    try:
+        from mediapipe.tasks.python.vision import FaceLandmarksConnections as F
+    except ImportError:  # same list, saved in the repo (islt/face_regions.json)
+        here = Path(__file__).resolve().parent
+        for p in (here / "face_regions.json", here.parent / "islt" / "face_regions.json"):
+            if p.exists():
+                return json.loads(p.read_text())["face_mediapipe_indices"]
+        raise
     idx = set()
     for group in (F.FACE_LANDMARKS_CONTOURS, F.FACE_LANDMARKS_NOSE):
         for c in group:

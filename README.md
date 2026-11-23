@@ -58,4 +58,6 @@ ISL_CHECKPOINT=runs/FaST/best.pt ISL_BOUNDARY=runs/boundary/boundary.pt .venv/bi
 3. Run `colab/train_fastisl.ipynb` on a GPU. It trains all 9 configurations. Runs resume after a disconnect.
 4. Copy `runs/` back. Then run `python -m islt.report runs` to rebuild the paper's table.
 
+No Colab GPU left? `kaggle/` has the same two steps as Kaggle notebooks. Kaggle gives about 30 free GPU hours a week and runs in the background. See [`kaggle/README.md`](kaggle/README.md).
+
 iSign is released for research use only.
