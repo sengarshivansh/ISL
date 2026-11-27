@@ -35,8 +35,10 @@ DEFAULTS = {
     "train": {"epochs": 30, "batch_size": 32, "lr_encoder": 3e-4, "lr_t5": 1e-4,
               "weight_decay": 0.01, "warmup_steps": 1000, "grad_clip": 1.0,
               "num_workers": 2, "patience": 6, "val_max": 2000, "label_smoothing": 0.1,
-              "max_hours": None},  # stop cleanly before a session limit (Kaggle: 12 h) and resume later
-    "eval": {"speeds": [1.0, 1.5, 2.0], "num_beams": 4, "max_new_tokens": 48, "batch_size": 64},
+              "max_hours": None,     # stop cleanly before a session limit (Kaggle: 12 h) and resume later
+              "word_dropout": 0.0},  # share of decoder input words hidden during training
+    "eval": {"speeds": [1.0, 1.5, 2.0], "num_beams": 4, "max_new_tokens": 48, "batch_size": 64,
+             "no_repeat_ngram": 3},
 }
 
 
@@ -97,7 +99,8 @@ def predict(model, items, get_raw, tok, cfg, device, speed=1.0):
     for batch in dl:
         b = to_device(batch, device)
         out = model.generate(b, max_new_tokens=cfg["eval"]["max_new_tokens"],
-                             num_beams=cfg["eval"]["num_beams"])
+                             num_beams=cfg["eval"]["num_beams"],
+                             no_repeat_ngram_size=cfg["eval"].get("no_repeat_ngram", 0))
         hyps += [h.strip() for h in tok.batch_decode(out, skip_special_tokens=True)]
         refs += batch["text"]
         uids += batch["uid"]
@@ -182,12 +185,13 @@ def train(cfg):
             log.close()
             return None
         model.train()
-        t0, run_loss = time.time(), 0.0
+        t0, run_loss, run_aux = time.time(), 0.0, 0.0
         for batch in dl:
             b = to_device(batch, device)
             with torch.autocast("cuda", dtype=torch.bfloat16, enabled=use_amp):
-                out = model(b)
-                loss = loss_fn(out.logits.flatten(0, 1).float(), b["labels"].flatten())
+                out = model(b, word_dropout=t.get("word_dropout", 0.0))
+                ce = loss_fn(out.logits.flatten(0, 1).float(), b["labels"].flatten())
+                loss = ce + mcfg.contrastive * out.aux_loss.float()
             opt.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
             scaler.unscale_(opt)
@@ -195,13 +199,15 @@ def train(cfg):
             scaler.step(opt)
             scaler.update()
             sched.step()
-            run_loss += loss.item()
+            run_loss += ce.item()
+            run_aux += out.aux_loss.detach().item()
             step += 1
         _, hyps, refs = predict(model, val_items, get_raw, tok,
                                 {**cfg, "eval": {**cfg["eval"], "num_beams": 1}}, device)
         val = subset_scores(hyps, refs)
         score = val["all"]["bleu4"] + 0.01 * val["all"]["chrf"]  # BLEU first, chrF breaks ties
         rec = {"epoch": epoch, "step": step, "loss": run_loss / max(1, len(dl)),
+               "aux_loss": run_aux / max(1, len(dl)),
                "val_bleu4": val["all"]["bleu4"], "val_chrf": val["all"]["chrf"],
                "val_question_acc": val["nonmanual"]["question_acc"],
                "val_negation_acc": val["nonmanual"]["negation_acc"],

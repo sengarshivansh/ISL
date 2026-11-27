@@ -41,6 +41,7 @@ class ModelConfig:
     multirate: bool = True
     t5_name: str | None = "t5-small"   # pretrained decoder; None = small T5 from scratch
     freeze_t5_encoder: bool = False
+    contrastive: float = 0.0     # weight of the clip<->sentence contrastive loss (0 = off)
 
     @property
     def use_face(self) -> bool:
@@ -165,6 +166,11 @@ class FaSTISL(nn.Module):
                 num_decoder_layers=3, num_heads=8, dropout_rate=cfg.dropout,
                 decoder_start_token_id=0, pad_token_id=0, eos_token_id=1))
         self.bridge = nn.Linear(cfg.d_model, self.t5.config.d_model)
+        if cfg.contrastive > 0:
+            dt = self.t5.config.d_model
+            self.con_sign = nn.Linear(dt, 256)
+            self.con_text = nn.Linear(dt, 256)
+            self.con_logit_scale = nn.Parameter(torch.tensor(2.659))  # log(1/0.07), as in CLIP
         if cfg.freeze_t5_encoder:
             for p in self.t5.encoder.parameters():
                 p.requires_grad = False
@@ -173,15 +179,50 @@ class FaSTISL(nn.Module):
         h, m = self.encoder(batch)
         return self.bridge(h), m.long()
 
-    def forward(self, batch):
+    def forward(self, batch, word_dropout: float = 0.0):
+        """T5 output; `.aux_loss` holds the contrastive loss (0 when off).
+
+        word_dropout: during training, replace this share of the decoder's input words with <unk>,
+        so the decoder cannot write the sentence from its language prior alone and must read the
+        signing (the model otherwise drifts towards fluent, topic-level guesses).
+        """
         emb, m = self.encode(batch)
-        return self.t5(inputs_embeds=emb, attention_mask=m, labels=batch["labels"])
+        labels = batch["labels"]
+        dec_in = self.t5._shift_right(labels)
+        if self.training and word_dropout > 0:
+            pad = self.t5.config.pad_token_id
+            drop = (torch.rand(dec_in.shape, device=dec_in.device) < word_dropout) & (dec_in != pad)
+            drop[:, 0] = False
+            dec_in = dec_in.masked_fill(drop, 2)  # 2 = <unk> in the T5 vocabulary
+        out = self.t5(inputs_embeds=emb, attention_mask=m, decoder_input_ids=dec_in, labels=labels)
+        out.aux_loss = (self.contrastive_loss(out.encoder_last_hidden_state, m, labels)
+                        if self.cfg.contrastive > 0 and self.training else labels.new_zeros((), dtype=torch.float))
+        return out
+
+    def contrastive_loss(self, sign_h, sign_mask, labels):
+        """Symmetric InfoNCE between each clip and its own sentence (the other sentences in the
+        batch are negatives). The sentence side is the same T5 encoder reading the target text."""
+        def pool(h, mask):
+            mask = mask.unsqueeze(-1).to(h.dtype)
+            return (h * mask).sum(1) / mask.sum(1).clamp(min=1)
+        pad = self.t5.config.pad_token_id
+        ids = labels.masked_fill(labels < 0, pad)
+        tmask = (ids != pad).long()
+        text_h = self.t5.encoder(input_ids=ids, attention_mask=tmask).last_hidden_state
+        s = F.normalize(self.con_sign(pool(sign_h, sign_mask)), dim=-1)
+        t = F.normalize(self.con_text(pool(text_h, tmask)), dim=-1)
+        logits = self.con_logit_scale.exp().clamp(max=100) * s @ t.T
+        # clips whose sentences are identical ("1", "Page number", ...) are all positives for each
+        # other, not negatives: spread the target over every copy of the same sentence
+        same = (ids[:, None, :] == ids[None, :, :]).all(-1).float()
+        target = same / same.sum(1, keepdim=True)
+        return (F.cross_entropy(logits, target) + F.cross_entropy(logits.T, target)) / 2
 
     @torch.no_grad()
-    def generate(self, batch, max_new_tokens=48, num_beams=4):
+    def generate(self, batch, max_new_tokens=48, num_beams=4, no_repeat_ngram_size=3):
         emb, m = self.encode(batch)
-        return self.t5.generate(inputs_embeds=emb, attention_mask=m,
-                                max_new_tokens=max_new_tokens, num_beams=num_beams)
+        return self.t5.generate(inputs_embeds=emb, attention_mask=m, max_new_tokens=max_new_tokens,
+                                num_beams=num_beams, no_repeat_ngram_size=no_repeat_ngram_size)
 
     def n_params(self, trainable_only=False):
         return sum(p.numel() for p in self.parameters() if p.requires_grad or not trainable_only)

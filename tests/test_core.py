@@ -142,3 +142,19 @@ def test_trim_static_removes_holds():
     clip, _ = trim_static(stream, 0)
     assert clip is not None and len(clip) < len(stream)
     assert trim_static(np.repeat(stream[:1], 20, axis=0), 0)[0] is None
+
+
+def test_word_dropout_and_contrastive_loss(toy):
+    from islt.data import make_collate
+    from islt.model import FaSTISL, ModelConfig, load_tokenizer
+    items, clips = toy
+    tok = load_tokenizer()
+    ds = SignDataset(items[:4], clips.__getitem__)
+    batch = make_collate(tok)([ds[i] for i in [0, 1, 2, 2]])  # a duplicate sentence: must count as positive
+    model = FaSTISL(ModelConfig(t5_name=None, d_model=64, enc_layers=1, contrastive=0.3)).train()
+    out = model(batch, word_dropout=0.5)
+    assert torch.isfinite(out.loss) and torch.isfinite(out.aux_loss) and out.aux_loss > 0
+    (out.loss + 0.3 * out.aux_loss).backward()
+    assert model.con_sign.weight.grad is not None
+    model.eval()
+    assert float(model(batch).aux_loss) == 0.0  # contrastive loss is training-only

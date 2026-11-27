@@ -9,8 +9,10 @@ model:
   t5_name: t5-small
   d_model: 256
   enc_layers: 4
+  contrastive: 0.3      # clip<->sentence contrastive loss: makes the encoder carry sentence content
 train:
-  epochs: 30
+  epochs: 20            # v1 (30 epochs) stopped improving on validation after ~18
+  word_dropout: 0.25    # v1 decoder ignored the signing and wrote topic-level guesses
   batch_size: 32
   num_workers: 2
 eval:

@@ -95,6 +95,24 @@ These numbers come from a toy sign language (`islt/synthetic.py`). In it, questi
 
 The pause rule breaks as soon as signing gets faster. The learned detector does not.
 
+## First real iSign run (Kaggle, 27 Nov 2026)
+
+The baseline (`B0_body_hands`) was trained for 30 epochs, about 20 minutes per epoch on a T4.
+
+| | BLEU-4 | chrF | ROUGE-L | BLEU-4 @1.5× |
+|---|---|---|---|---|
+| B0 v1 (test, video-disjoint split) | 0.84 | 14.8 | 9.6 | 1.00 |
+
+**Diagnosis.** The predictions (`runs/v1_B0_body_hands/predictions_speed1.0.tsv`) show the model guesses the topic, not the content. A textbook clip gets "Page number 76"; a news clip gets generic news. The score at 1.5× speed is no worse than at normal speed, which also shows the model hardly reads the signing.
+
+**v2 fix** (`configs/isign_base.yaml`):
+- Word dropout 0.25 on the decoder input.
+- Clip↔sentence contrastive loss (weight 0.3; identical sentences count as positives).
+- No repeated 3-grams when decoding.
+- 20 epochs.
+
+The Kaggle notebook now trains B0 and FaST side by side on the two T4s. Results go to `runs_v2/`.
+
 ## Next (needs the iSign data)
 
 1. Fix the Hugging Face login: `hf auth login`, or set `HF_TOKEN` in Colab secrets.
