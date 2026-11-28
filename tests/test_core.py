@@ -158,3 +158,15 @@ def test_word_dropout_and_contrastive_loss(toy):
     assert model.con_sign.weight.grad is not None
     model.eval()
     assert float(model(batch).aux_loss) == 0.0  # contrastive loss is training-only
+
+
+def test_paired_bootstrap_prefers_better_system(tmp_path):
+    from islt.significance import paired_bootstrap
+    refs = [f"the cat number {i} sat on the mat" for i in range(60)]
+    a, b = tmp_path / "a.tsv", tmp_path / "b.tsv"
+    a.write_text("uid\treference\tprediction\n" + "".join(f"u{i}\t{r}\ta dog ran\n" for i, r in enumerate(refs)))
+    b.write_text("uid\treference\tprediction\n" + "".join(f"u{i}\t{r}\t{r}\n" for i, r in enumerate(refs)))
+    out = paired_bootstrap(a, b, n=50)
+    assert out["bleu4"]["B"] > out["bleu4"]["A"] and out["bleu4"]["p_value"] < 0.05
+    same = paired_bootstrap(a, a, n=50)
+    assert same["bleu4"]["delta"] == 0 and same["bleu4"]["p_value"] == 1.0
