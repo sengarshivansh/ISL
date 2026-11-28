@@ -127,8 +127,16 @@ Both main models trained for 20 epochs in parallel on 2 × T4 (B0 ~7.9 h, FaST ~
 - FaST is +15 % relative BLEU-4 over B0, which clears the ≥2 % target. It also beats B0 on chrF and ROUGE-L.
 - Fast signing: FaST loses 5 % at 2× speed and B0 loses 15 %.
 - Question and negation accuracy (94–95 % / 86 %) are still near majority-class levels. They are not yet evidence for the face stream.
+- **Significance** (paired bootstrap, 1,000 resamples, `python -m islt.significance`):
+  - at 1×: BLEU-4 +0.27 (95 % CI 0.11–0.43, p = 0.001); chrF +0.30 (p < 0.001);
+  - at 2×: BLEU-4 +0.43 (CI 0.27–0.59); chrF +2.22 (p < 0.001).
+- **Recall** of the question and negation forms (better evidence than accuracy):
+  - question: 27 % → 35 % (169 refs);
+  - negation: 42 % → 55 % (530 refs).
+  - Confounded with speed aug until B1 is in.
+- Validation BLEU-4 plateaued after ~15 epochs (B0 ≈ 0.87, FaST ≈ 1.13), so 20 epochs is enough.
+- Predictions are still mostly topic-level (news-like sentences, dates, "Rs 2,000 crore"). The absolute quality is low, as in all published iSign work.
 - **To do before claiming:**
-  - paired bootstrap significance on `predictions_speed*.tsv`;
   - a second seed;
   - finish the B1_speedaug and FaST_noaug ablations, which resume from `last.pt`;
   - run the face-region runs.

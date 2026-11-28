@@ -32,9 +32,10 @@ multi-rate temporal encoder and 0.5--2$\times$ temporal resampling, and (iii)~a 
 sentence-boundary detector that turns continuous signing into sentence-level English text and speech in
 real time, even when the signer is fast or does not pause. A pause-threshold baseline, by contrast,
 merges sentences as soon as signing speeds up. On
-the iSign benchmark, \fast{} improves BLEU-4 from \todo{x} to \todo{y} (\todo{+z\%} relative) over a
-body+hands baseline with the same decoder, keeps \todo{p\%} of its accuracy when signing is twice as
-fast (baseline: \todo{q\%}), and raises question-form accuracy from \todo{a} to \todo{b}. A region
+the iSign benchmark, \fast{} improves BLEU-4 from 1.80 to 2.07 (+15\% relative, $p<0.01$) over a
+body+hands baseline with the same decoder, keeps 95\% of its BLEU-4 when signing is twice as
+fast (baseline: 85\%), and recovers more of the question and negation forms (recall 35\% vs.\ 27\% and
+55\% vs.\ 42\%). A region
 ablation shows that \todo{region} carries most of the benefit. The full system runs at \todo{fps} on
 a laptop CPU with \todo{ms}~ms model latency per sentence. Code, configs and the demo are released.
 \end{abstract}
@@ -150,7 +151,17 @@ log-uniformly from $[0.5, 2]$ by linear interpolation between frames.
 \subsection{Decoder}
 A linear bridge maps encoder states to the input embedding space of a pretrained T5-small
 \citep{raffel2020t5}, whose encoder and decoder are fine-tuned end to end, following
-\citet{dhamecha2026temporal}. We decode with beam size 4.
+\citet{dhamecha2026temporal}. We decode with beam size 4 and block repeated 3-grams.
+
+\paragraph{Keeping the decoder grounded.} With a pretrained decoder and only $\sim$10 words per target,
+our first baseline drifted to fluent, topic-level guesses (\emph{``Page number 76''} for a textbook
+clip; generic news for news clips) and scored no worse on 1.5$\times$ replays than on normal speed, a
+sign that it barely read the input. Two training changes, used for every system in
+Table~\ref{tab:main}, fix this. \emph{Decoder word dropout}: 25\% of the decoder's input tokens are
+replaced by \texttt{<unk>} during training, so the next word cannot be predicted from the language prior
+alone. \emph{Clip--sentence contrastive loss}: a symmetric InfoNCE term (weight 0.3) between the
+mean-pooled sign encoding and the T5 encoding of the target sentence, where identical sentences in a
+batch count as positives. Together they raise the baseline from 0.84 to 1.80 BLEU-4.
 
 \subsection{Streaming segmentation}
 \paragraph{Pause rule (baseline).} For live use, a segmenter receives keypoints at 10\,fps. It tracks the hands' motion energy
@@ -179,7 +190,8 @@ translated.
 
 \section{Experimental Setup}
 
-\paragraph{Data.} iSign v1.1 \citep{joshi2024isign}: \todo{N} clips with poses after filtering. iSign
+\paragraph{Data.} iSign v1.1 \citep{joshi2024isign}: 127{,}237 clips with poses and a non-empty
+sentence; the test split has 5{,}325 clips. iSign
 clip identifiers have the form \texttt{<video>-<n>}; we hash the source video to assign 90/5/5\% of
 \emph{videos} to train/validation/test, so no test sentence comes from a video seen in training.
 Frames are kept at 10\,fps and at most 256 per clip.
@@ -191,8 +203,9 @@ work). \textbf{B1}: B0 + multi-rate encoder + speed augmentation. \textbf{F-*}: 
 \textbf{\fast-concat} and \textbf{\fast{} w/o aug} isolate the gate and the augmentation.
 
 \paragraph{Training.} AdamW (encoder lr $3{\cdot}10^{-4}$, T5 lr $10^{-4}$, weight decay 0.01), 1k
-warm-up steps then cosine decay, batch 32, label smoothing 0.1, up to 30 epochs with early stopping on
-validation BLEU-4 (patience 6), bf16 on one \todo{GPU}.
+warm-up steps then cosine decay, batch 32, label smoothing 0.1, 20 epochs, keeping the checkpoint with
+the best validation BLEU-4. Each model trains in fp32 on one NVIDIA T4 (16\,GB), about 25 minutes per
+epoch; two models train side by side on a 2$\times$T4 machine.
 
 \paragraph{Metrics.} BLEU-4 \citep{papineni2002bleu} with SacreBLEU \citep{post2018sacrebleu}, chrF
 \citep{popovic2015chrf} and ROUGE-L \citep{lin2004rouge}. \emph{Speed robustness}: the test set
@@ -209,17 +222,28 @@ rule and the learned detector.
 
 \input{results_table}
 
-\paragraph{Main result.} \todo{Describe Table~\ref{tab:main}: FaST vs B0 BLEU-4 / chrF; relative gain;
-which components contribute (B1 vs B0 = speed robustness; FaST vs B1 = face).}
+\paragraph{Main result.} \fast{} reaches 2.07 BLEU-4 against 1.80 for the body+hands baseline, a 15\%
+relative gain, and also improves chrF (17.20 vs.\ 16.90) and ROUGE-L (14.26 vs.\ 13.64). A paired
+bootstrap over the 5{,}325 test clips (1{,}000 resamples) gives a BLEU-4 gain of $+0.27$ (95\% CI
+$[0.11, 0.43]$, $p=0.001$) and a chrF gain of $+0.30$ ($[0.13, 0.46]$, $p<0.001$). Both systems exceed
+the 1.47 BLEU-4 of the original iSign pose baseline \citep{joshi2024isign}, but remain far below the best
+shared-task systems, so these are gains over a matched baseline, not a new state of the art. \fast{}
+differs from B0 in both the face stream and the speed-robust encoder;
+\todo{B1 (speed only) separates the two: FaST vs B1 = face, B1 vs B0 = speed robustness.}
 
 \paragraph{Which facial region matters?} \todo{Compare F-mouth, F-eyes, F-eyebrows, F-head; relate to
 \citet{pham2025facial} (mouth most informative for recognition).}
 
-\paragraph{Fast signing.} \todo{BLEU-4 at 1.5$\times$/2$\times$ as a share of the 1$\times$ score, for
-B0 vs FaST.}
+\paragraph{Fast signing.} At 2$\times$ speed the baseline keeps 85\% of its BLEU-4 (1.53) while
+\fast{} keeps 95\% (1.96); at 1.5$\times$ neither loses accuracy. The gap at 2$\times$ is larger than at
+normal speed: $+0.43$ BLEU-4 (95\% CI $[0.27, 0.59]$) and $+2.22$ chrF ($[2.03, 2.41]$), both $p<0.001$.
 
-\paragraph{Non-manual grammar.} \todo{Question and negation accuracy; examples where FaST gets the
-question form right and B0 does not (from predictions\_speed1.0.tsv).}
+\paragraph{Non-manual grammar.} Question and negation \emph{accuracy} barely moves (94.3$\to$94.8\%
+and 85.8$\to$86.3\%) because most test sentences are neither, so always predicting a statement already
+scores high. \emph{Recall} is more telling: \fast{} produces a question for 35\% of the 169 question
+references (baseline 27\%) and a negation for 55\% of the 530 negated references (baseline 42\%), and
+BLEU-4 on the question subset rises from 0.85 to 1.19. \todo{Confirm against B1, and add examples where
+FaST gets the question form right and B0 does not.}
 
 \paragraph{Gate behaviour.} \todo{Mean gate value per frame; is it higher on question/negation
 sentences?}
