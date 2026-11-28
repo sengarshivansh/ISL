@@ -113,6 +113,26 @@ The baseline (`B0_body_hands`) was trained for 30 epochs, about 20 minutes per e
 
 The Kaggle notebook now trains B0 and FaST side by side on the two T4s. Results go to `runs_v2/`.
 
+## v2 results on iSign (Kaggle, 28 Nov 2026)
+
+Both main models trained for 20 epochs in parallel on 2 × T4 (B0 ~7.9 h, FaST ~8.4 h). The session ran 10 h 50 min, and B1_speedaug and FaST_noaug were started and saved as `last.pt`.
+
+| Model | BLEU-4 | chrF | ROUGE-L | BLEU-4 @1.5× | BLEU-4 @2× | Drop at 2× |
+|---|---|---|---|---|---|---|
+| B0 v1 (old training) | 0.84 | 14.8 | 9.6 | 1.00 | – | – |
+| B0 v2 (body + hands) | 1.80 | 16.90 | 13.64 | 1.81 | 1.53 | −15 % |
+| **FaST v2** | **2.07** | **17.20** | **14.26** | **2.09** | **1.96** | **−5 %** |
+
+- The v2 fix (word dropout, contrastive loss, no-repeat) more than doubled the baseline: 0.84 → 1.80. Both models now beat the iSign paper baseline of 1.47.
+- FaST is +15 % relative BLEU-4 over B0, which clears the ≥2 % target. It also beats B0 on chrF and ROUGE-L.
+- Fast signing: FaST loses 5 % at 2× speed and B0 loses 15 %.
+- Question and negation accuracy (94–95 % / 86 %) are still near majority-class levels. They are not yet evidence for the face stream.
+- **To do before claiming:**
+  - paired bootstrap significance on `predictions_speed*.tsv`;
+  - a second seed;
+  - finish the B1_speedaug and FaST_noaug ablations, which resume from `last.pt`;
+  - run the face-region runs.
+
 ## Next (needs the iSign data)
 
 1. Fix the Hugging Face login: `hf auth login`, or set `HF_TOKEN` in Colab secrets.
